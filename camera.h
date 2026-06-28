@@ -5,6 +5,11 @@
 #include "raytracing.h"
 #include "material.h"
 
+#include <atomic>
+#include <chrono>
+#include <thread>
+#include <vector>
+
 class camera {
 	public:
 		double aspect_ratio      = 1.0;  // Ratio of image width over height
@@ -20,27 +25,78 @@ class camera {
 		double defocus_angle = 0;  // Variation angle of rays through each pixel
     	double focus_dist = 10;    // Distance from camera lookfrom point to plane of perfect focus
 
+		bool multithreaded = true; // Render with multiple threads when true
+
 		void render(const hittable& world) {
 			initialize();
 
+			std::vector<color> framebuffer(size_t(image_width) * image_height);
+
+			auto start = std::chrono::steady_clock::now();
+
+			if (multithreaded)
+				render_threaded(world, framebuffer);
+			else
+				render_single(world, framebuffer);
+
+			auto end = std::chrono::steady_clock::now();
+			double elapsed = std::chrono::duration<double>(end - start).count();
+
 			std::cout << "P3\n" << image_width << ' ' << image_height << "\n255\n";
+			for (int j = 0; j < image_height; j++)
+				for (int i = 0; i < image_width; i++)
+					write_color(std::cout, framebuffer[size_t(j) * image_width + i]);
 
-			for (int j = 0; j < image_height; j++) {
-				std::clog << "\rScanlines remaining: " << (image_height - j) << ' ' << std::flush;
-				for (int i = 0; i < image_width; i++) {
-					color pixel_color(0,0,0);
-					for (int sample = 0; sample < samples_per_pixel; sample++) {
-						ray r = get_ray(i, j);
-						pixel_color += ray_color(r, max_depth, world);
-					}
-					write_color(std::cout, pixel_samples_scale * pixel_color);
-				}
-			}
-
-			std::clog << "\rDone.                 \n";
+			std::clog << "\rDone in " << elapsed << "s "
+					  << (multithreaded ? "(multithreaded)." : "(single-threaded).") << "          \n";
 		}
 
 	private:
+		// Render every row one after another on a single thread.
+		void render_single(const hittable& world, std::vector<color>& framebuffer) {
+			for (int j = 0; j < image_height; j++) {
+				std::clog << "\rScanlines remaining: " << (image_height - j) << ' ' << std::flush;
+				for (int i = 0; i < image_width; i++)
+					framebuffer[size_t(j) * image_width + i] = render_pixel(i, j, world);
+			}
+		}
+
+		// Render rows in parallel: each thread repeatedly grabs the next unclaimed row.
+		void render_threaded(const hittable& world, std::vector<color>& framebuffer) {
+			std::atomic<int> next_row(0);
+			std::atomic<int> rows_done(0);
+
+			auto worker = [&]() {
+				int j;
+				while ((j = next_row.fetch_add(1)) < image_height) {
+					for (int i = 0; i < image_width; i++)
+						framebuffer[size_t(j) * image_width + i] = render_pixel(i, j, world);
+					int done = rows_done.fetch_add(1) + 1;
+					std::clog << "\rScanlines remaining: " << (image_height - done) << ' ' << std::flush;
+				}
+			};
+
+			unsigned int thread_count = std::thread::hardware_concurrency();
+			if (thread_count == 0)
+				thread_count = 1;
+
+			std::vector<std::thread> threads;
+			for (unsigned int t = 0; t < thread_count; t++)
+				threads.emplace_back(worker);
+			for (auto& th : threads)
+				th.join();
+		}
+
+		// Compute the final averaged color for a single pixel.
+		color render_pixel(int i, int j, const hittable& world) const {
+			color pixel_color(0,0,0);
+			for (int sample = 0; sample < samples_per_pixel; sample++) {
+				ray r = get_ray(i, j);
+				pixel_color += ray_color(r, max_depth, world);
+			}
+			return pixel_samples_scale * pixel_color;
+		}
+
 		int    image_height;         // Rendered image height
 		double pixel_samples_scale;  // Color scale factor for a sum of pixel samples
 		point3 center;               // Camera center
@@ -99,8 +155,9 @@ class camera {
 
 			auto ray_origin = (defocus_angle <= 0) ? center : defocus_disk_sample();
 			auto ray_direction = pixel_sample - ray_origin;
+			auto ray_time = random_double();
 
-			return ray(ray_origin, ray_direction);
+			return ray(ray_origin, ray_direction, ray_time);
 		}
 
 		vec3 sample_square() const {

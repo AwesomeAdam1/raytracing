@@ -1,4 +1,4 @@
-raytracer % cmake -S . -B build
+cmake -S . -B build
 cmake --build build
 ./build/raytracer > image.ppm
 open image.ppm
