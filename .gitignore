@@ -17,12 +17,6 @@ raytracer
 *.exe
 *.out
 
-# Generated render outputs
-*.ppm
-*.png
-*.jpg
-*.jpeg
-
 # Editor and OS noise
 .DS_Store
 .vscode/
