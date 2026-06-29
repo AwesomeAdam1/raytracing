@@ -10,3 +10,6 @@ find_package(Threads REQUIRED)
 
 add_executable(raytracer main.cpp)
 target_link_libraries(raytracer PRIVATE Threads::Threads)
+
+# Copy image assets next to the executable so texture loading works from build/.
+file(COPY ${CMAKE_SOURCE_DIR}/images DESTINATION ${CMAKE_BINARY_DIR})
