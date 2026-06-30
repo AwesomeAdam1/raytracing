@@ -46,4 +46,12 @@ class interval {
 const interval interval::empty    = interval(+std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity());
 const interval interval::universe = interval(-std::numeric_limits<double>::infinity(), +std::numeric_limits<double>::infinity());
 
+interval operator+(const interval& ival, double displacement) {
+    return interval(ival.min + displacement, ival.max + displacement);
+}
+
+interval operator+(double displacement, const interval& ival) {
+    return ival + displacement;
+}
+
 #endif
